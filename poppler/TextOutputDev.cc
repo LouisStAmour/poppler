@@ -2365,6 +2365,7 @@ TextPage::TextPage(GBool rawOrderA) {
   underlines = new GooList();
   links = new GooList();
   mergeCombining = gTrue;
+  actualText.replacement = nullptr;
 }
 
 TextPage::~TextPage() {
@@ -2454,6 +2455,8 @@ void TextPage::clear() {
   fonts = new GooList();
   underlines = new GooList();
   links = new GooList();
+  delete actualText.replacement;
+  actualText.replacement = nullptr;
 }
 
 void TextPage::updateFont(GfxState *state) {
@@ -2577,6 +2580,18 @@ void TextPage::addChar(GfxState *state, double x, double y,
   int i;
   int wMode;
   Matrix mat;
+
+  if (actualText.replacement) {
+    // Inside actualText span.
+    if (!actualText.nBytes) {
+    	actualText.x0 = x;
+    	actualText.y0 = y;
+    }
+    actualText.x1 = x + dx;
+    actualText.y1 = y + dy;
+    actualText.nBytes += nBytes;
+    return;
+  }
 
   // subtract char and word spacing from the dx,dy values
   sp = state->getCharSpace();
@@ -2757,6 +2772,37 @@ void TextPage::addUnderline(double x0, double y0, double x1, double y1) {
 
 void TextPage::addLink(int xMin, int yMin, int xMax, int yMax, AnnotLink *link) {
   links->append(new TextLink(xMin, yMin, xMax, yMax, link));
+}
+
+void TextPage::beginActualText(GfxState *state, const GooString *text)
+{
+  delete actualText.replacement;
+  actualText.replacement = new GooString(text);
+  actualText.nBytes = 0;
+}
+
+void TextPage::endActualText(GfxState *state)
+{
+  if (!actualText.replacement)
+      return;
+
+  // ActualText span closed. Output the span text and the
+  // extents of all the glyphs inside the span
+  if (actualText.nBytes) {
+    Unicode *uni = NULL;
+    int length;
+
+    // now that we have the position info for all of the text inside
+    // the marked content span, we feed the "ActualText" back through
+    // addChar()
+    length = TextStringToUCS4(actualText.replacement, &uni);
+    addChar(state, actualText.x0, actualText.y0,
+	    actualText.x1 - actualText.x0, actualText.y1 - actualText.y0,
+	    0, actualText.nBytes, uni, length);
+    gfree(uni);
+  }
+  delete actualText.replacement;
+  actualText.replacement = NULL;
 }
 
 void TextPage::coalesce(GBool physLayout, double fixedPitch, GBool doHTML) {
@@ -5486,70 +5532,6 @@ TextWordList *TextPage::makeWordList(GBool physLayout) {
 #endif
 
 //------------------------------------------------------------------------
-// ActualText
-//------------------------------------------------------------------------
-ActualText::ActualText(TextPage *out) {
-  out->incRefCnt();
-  text = out;
-  actualText = nullptr;
-  actualTextNBytes = 0;
-}
-
-ActualText::~ActualText() {
-  if (actualText)
-    delete actualText;
-  text->decRefCnt();
-}
-
-void ActualText::addChar(GfxState *state, double x, double y,
-			 double dx, double dy,
-			 CharCode c, int nBytes, Unicode *u, int uLen) {
-  if (!actualText) {
-    text->addChar(state, x, y, dx, dy, c, nBytes, u, uLen);
-    return;
-  }
-
-  // Inside ActualText span.
-  if (!actualTextNBytes) {
-    actualTextX0 = x;
-    actualTextY0 = y;
-  }
-  actualTextX1 = x + dx;
-  actualTextY1 = y + dy;
-  actualTextNBytes += nBytes;
-}
-
-void ActualText::begin(GfxState *state, const GooString *text) {
-  if (actualText)
-    delete actualText;
-  actualText = new GooString(text);
-  actualTextNBytes = 0;
-}
-
-void ActualText::end(GfxState *state) {
-  // ActualText span closed. Output the span text and the
-  // extents of all the glyphs inside the span
-
-  if (actualTextNBytes) {
-    Unicode *uni = nullptr;
-    int length;
-
-    // now that we have the position info for all of the text inside
-    // the marked content span, we feed the "ActualText" back through
-    // text->addChar()
-    length = TextStringToUCS4(actualText, &uni);
-    text->addChar(state, actualTextX0, actualTextY0,
-                  actualTextX1 - actualTextX0, actualTextY1 - actualTextY0,
-                  0, actualTextNBytes, uni, length);
-    gfree(uni);
-  }
-
-  delete actualText;
-  actualText = nullptr;
-  actualTextNBytes = 0;
-}
-
-//------------------------------------------------------------------------
 // TextOutputDev
 //------------------------------------------------------------------------
 
@@ -5581,7 +5563,6 @@ TextOutputDev::TextOutputDev(char *fileName, GBool physLayoutA,
     } else {
       error(errIO, -1, "Couldn't open text file '{0:s}'", fileName);
       ok = gFalse;
-      actualText = nullptr;
       return;
     }
     outputFunc = &TextOutputDev_outputToFile;
@@ -5591,7 +5572,6 @@ TextOutputDev::TextOutputDev(char *fileName, GBool physLayoutA,
 
   // set up text object
   text = new TextPage(rawOrderA);
-  actualText = new ActualText(text);
 }
 
 TextOutputDev::TextOutputDev(TextOutputFunc func, void *stream,
@@ -5605,7 +5585,6 @@ TextOutputDev::TextOutputDev(TextOutputFunc func, void *stream,
   rawOrder = rawOrderA;
   doHTML = gFalse;
   text = new TextPage(rawOrderA);
-  actualText = new ActualText(text);
   ok = gTrue;
 }
 
@@ -5619,7 +5598,6 @@ TextOutputDev::~TextOutputDev() {
   if (text) {
     text->decRefCnt();
   }
-  delete actualText;
 }
 
 void TextOutputDev::startPage(int pageNum, GfxState *state, XRef *xref) {
@@ -5652,7 +5630,7 @@ void TextOutputDev::drawChar(GfxState *state, double x, double y,
 			     double dx, double dy,
 			     double originX, double originY,
 			     CharCode c, int nBytes, Unicode *u, int uLen) {
-  actualText->addChar(state, x, y, dx, dy, c, nBytes, u, uLen);
+  text->addChar(state, x, y, dx, dy, c, nBytes, u, uLen);
 }
 
 void TextOutputDev::incCharCount(int nChars) {
@@ -5661,12 +5639,12 @@ void TextOutputDev::incCharCount(int nChars) {
 
 void TextOutputDev::beginActualText(GfxState *state, const GooString *text)
 {
-  actualText->begin(state, text);
+  this->text->beginActualText(state, text);
 }
 
 void TextOutputDev::endActualText(GfxState *state)
 {
-  actualText->end(state);
+  text->endActualText(state);
 }
 
 void TextOutputDev::stroke(GfxState *state) {

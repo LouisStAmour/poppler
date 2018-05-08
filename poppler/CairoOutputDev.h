@@ -353,7 +353,6 @@ protected:
   GBool prescaleImages;
 
   TextPage *text;		// text for the current page
-  ActualText *actualText;
 
   cairo_pattern_t *group;
   cairo_pattern_t *shape;

@@ -591,6 +591,10 @@ public:
   // Add a hyperlink.
   void addLink(int xMin, int yMin, int xMax, int yMax, AnnotLink *link);
 
+    // Mark the actual text replacement
+  void beginActualText(GfxState *state, const GooString *text);
+  void endActualText(GfxState *state);
+
   // Coalesce strings that look like parts of the same line.
   void coalesce(GBool physLayout, double fixedPitch, GBool doHTML);
 
@@ -706,6 +710,13 @@ private:
   GooList *underlines;		// [TextUnderline]
   GooList *links;		// [TextLink]
 
+  struct {
+    GooString *replacement;     // replacement text for the span
+    double x0, y0, x1, y1;
+    int nBytes;
+  } actualText;
+
+
   int refCnt;
 
   friend class TextLine;
@@ -716,37 +727,6 @@ private:
   friend class TextSelectionPainter;
   friend class TextSelectionDumper;
 };
-
-//------------------------------------------------------------------------
-// ActualText
-//------------------------------------------------------------------------
-
-class ActualText {
-public:
-  // Create an ActualText
-  ActualText(TextPage *out);
-  ~ActualText();
-
-  ActualText(const ActualText &) = delete;
-  ActualText& operator=(const ActualText &) = delete;
-
-  void addChar(GfxState *state, double x, double y,
-	       double dx, double dy,
-	       CharCode c, int nBytes, Unicode *u, int uLen);
-  void begin(GfxState *state, const GooString *text);
-  void end(GfxState *state);
-
-private:
-  TextPage *text;
-
-  GooString *actualText;        // replacement text for the span
-  double actualTextX0;
-  double actualTextY0;
-  double actualTextX1;
-  double actualTextY1;
-  int actualTextNBytes;
-};
-  
 
 //------------------------------------------------------------------------
 // TextOutputDev
@@ -906,7 +886,6 @@ private:
   GBool doHTML;			// extra processing for HTML conversion
   GBool ok;			// set up ok?
 
-  ActualText *actualText;
 };
 
 #endif

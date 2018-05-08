@@ -171,7 +171,6 @@ CairoOutputDev::CairoOutputDev() {
   knockoutCount = 0;
 
   text = nullptr;
-  actualText = nullptr;
 
   // the SA parameter supposedly defaults to false, but Acrobat
   // apparently hardwires it to true
@@ -198,8 +197,6 @@ CairoOutputDev::~CairoOutputDev() {
     cairo_pattern_destroy (shape);
   if (text) 
     text->decRefCnt();
-  if (actualText)
-    delete actualText;  
 }
 
 void CairoOutputDev::setCairo(cairo_t *cairo)
@@ -228,16 +225,9 @@ void CairoOutputDev::setTextPage(TextPage *text)
 {
   if (this->text) 
     this->text->decRefCnt();
-  if (actualText)
-    delete actualText;
-  if (text) {
-    this->text = text;
+  this->text = text;
+  if (this->text)
     this->text->incRefCnt();
-    actualText = new ActualText(text);
-  } else {
-    this->text = nullptr;
-    actualText = nullptr;
-  }
 }
 
 void CairoOutputDev::setAntialias(cairo_antialias_t antialias)
@@ -1435,7 +1425,7 @@ void CairoOutputDev::drawChar(GfxState *state, double x, double y,
 
   if (!text)
     return;
-  actualText->addChar (state, x, y, dx, dy, code, nBytes, u, uLen);
+  text->addChar (state, x, y, dx, dy, code, nBytes, u, uLen);
 }
 
 void CairoOutputDev::endString(GfxState *state)
@@ -1592,13 +1582,13 @@ void CairoOutputDev::endTextObject(GfxState *state) {
 void CairoOutputDev::beginActualText(GfxState *state, const GooString *text)
 {
   if (this->text)
-    actualText->begin(state, text);
+    this->text->beginActualText(state, text);
 }
 
 void CairoOutputDev::endActualText(GfxState *state)
 {
   if (text)
-    actualText->end(state);
+    text->endActualText(state);
 }
 
 static inline int splashRound(SplashCoord x) {
